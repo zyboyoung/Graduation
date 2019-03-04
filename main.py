@@ -1110,6 +1110,8 @@ def plot_epochs(protein='all', train=True, model_type='CNN', n_epochs=100, info=
         plt.legend(loc='upper right')
         plt.savefig('epochs/CNN_s_pkl/' + 'total_loss_2.png')
 
+        return plot_train_loss
+
     else:
         epochs(protein=protein, train=train, model_type=model_type, n_epochs=n_epochs, info=info)
 
@@ -1178,7 +1180,7 @@ def plot_test_acc():
             model = CNN(nb_filter=16, num_classes=2, kernel_size=(4, 10), pool_size=(1, 3), window_size=507,
                         hidden_size=200, stride=(1, 1), padding=0, drop=False)
             model = model.cuda()
-            model_file = 'CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
+            model_file = '../Results/CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
             torch.cuda.empty_cache()
             model.load_state_dict(torch.load(model_file))
             y_pred = model.predict_prob(x_data)
@@ -1213,6 +1215,47 @@ def plot_test_acc():
     plt.savefig('epochs/' + 'total_acc_test.png')
 
 
+# 将train_loss和test_loss绘制在一个图中
+@cal_time
+def train_test_loss():
+    test_total_loss = []
+    for count, protein in enumerate(proteins):
+        test_total_loss.append([])
+        data = load_data(protein=protein, train=False)
+        x_data, y_data = get_bag_data(data=data)
+        x_data = np.array(x_data[0])
+        for epoch in range(1, 101):
+            model = CNN(nb_filter=16, num_classes=2, kernel_size=(4, 10), pool_size=(1, 3), window_size=507,
+                        hidden_size=200, stride=(1, 1), padding=0, drop=False)
+            model = model.cuda()
+            model_file = 'CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
+            torch.cuda.empty_cache()
+            model.load_state_dict(torch.load(model_file))
+            y_pred = np.array(model.predict_prob(x_data))
+            y_data = np.array(y_data)
+            y_pred = Variable(torch.from_numpy(y_pred.astype(np.float32))).cuda()
+            y_data = Variable(torch.from_numpy(y_data.astype(np.float32))).cuda()
+
+            test_total_loss[count].append(nn.CrossEntropyLoss(y_pred, y_data))
+
+    test_loss = [0] * 100
+    for i in range(100):
+        for j in range(len(proteins)):
+            test_loss[i] += test_total_loss[j][i]
+    test_loss = [i / len(proteins) for i in test_loss]
+
+    train_loss = plot_epochs(protein='all', train=True)
+    x = list(range(1, 101))
+    plt.figure()
+    plt.title('Model Loss')
+    plt.xlabel('epochs')
+    plt.ylabel('loss')
+    plt.plot(x, train_loss, color='red', label='train_loss')
+    plt.plot(x, test_loss, color='blue', label='test_loss')
+    plt.legend(loc='lower right')
+    plt.savefig('epochs/' + 'train_test_loss.png')
+
+
 if __name__ == '__main__':
     protein_list = []
     data_dir = '../Data/GraphProt_CLIP_sequences'
@@ -1228,6 +1271,4 @@ if __name__ == '__main__':
     #     validation(protein=protein)
     #     print('====第%d个已经完成====: %s' % ((count + 1), protein))
 
-    plot_epochs()
-
-    # plot_test_acc()
+    train_test_loss()
