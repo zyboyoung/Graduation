@@ -1223,21 +1223,31 @@ def train_test_loss():
         test_total_loss.append([])
         data = load_data(protein=protein, train=False)
         x_data, y_data = get_bag_data(data=data)
-        x_data = np.array(x_data[0])
+        x_data = x_data[0]
+        test_set = TensorDataset(torch.from_numpy(np.array(x_data).astype(np.float32)),
+                                 torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
+        test_loader = DataLoader(dataset=test_set, batch_size=128, shuffle=False)
+        model = CNN(nb_filter=16, num_classes=2, kernel_size=(4, 10), pool_size=(1, 3), window_size=507,
+                    hidden_size=200, stride=(1, 1), padding=0, drop=False)
+        model = model.cuda()
+        loss = nn.CrossEntropyLoss()
         for epoch in range(1, 101):
-            model = CNN(nb_filter=16, num_classes=2, kernel_size=(4, 10), pool_size=(1, 3), window_size=507,
-                        hidden_size=200, stride=(1, 1), padding=0, drop=False)
-            model = model.cuda()
-            model_file = 'CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
+            model_file = '../Results/CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
             torch.cuda.empty_cache()
             model.load_state_dict(torch.load(model_file))
-            y_pred = np.array(model.predict_prob(x_data))
-            y_data = np.array(y_data)
-            y_pred = Variable(torch.from_numpy(y_pred.astype(np.float32))).cuda()
-            y_data = Variable(torch.from_numpy(y_data.astype(np.float32))).cuda()
+            temp_loss_for_one_epoch = []
+            for x, y in test_loader:
+                x_v = Variable(x).cuda()
+                y_v = Variable(y).cuda()
+                y_pred = model(x_v)
+                temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+            test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
+            print('%s测试集第%d次迭代已经完成' % (protein, epoch))
+        print('========')
+        print('%s测试集已经完成loss的计算' % protein)
+        print('========')
 
-            test_total_loss[count].append(nn.CrossEntropyLoss(y_pred, y_data))
-
+    print('所有测试集的loss已经计算完成')
     test_loss = [0] * 100
     for i in range(100):
         for j in range(len(proteins)):
