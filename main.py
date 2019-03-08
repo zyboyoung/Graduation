@@ -727,7 +727,8 @@ class ModelCompile(object):
                 del loss
         return sum(total_loss) / len(total_loss)
 
-    def fit(self, x, y, batch_size=32, nb_epoch=10, plot=False, protein=None, total_loss=None, count=0):
+    def fit(self, x, y, batch_size=32, nb_epoch=10, plot=False, protein=None, total_loss=None, count=0,
+            info=1, model_type=None):
         if len(x) == 2:
             x[0] = np.array(x[0])
             x[1] = np.array(x[1])
@@ -753,13 +754,19 @@ class ModelCompile(object):
 
         if plot:
             x = list(range(nb_epoch))
-
             plt.figure()
             plt.title('Model Loss for %s' % protein)
             plt.xlabel('epochs')
             plt.ylabel('loss')
             plt.plot(x, plot_loss, color='blue')
-            plt.savefig('epochs/CNN_s/' + protein + '_train.png')
+            if info == 1:
+                filename = 'CNN_s/'
+            else:
+                if model_type == 'CNN':
+                    filename = 'CNN_ss/'
+                else:
+                    filename = 'CNN_BLSTM_ss/'
+            plt.savefig('epochs/' + filename + protein + '_train.png')
 
 
 # 多种评价函数
@@ -1068,7 +1075,7 @@ def epochs(protein, train=True, model_type='CNN', batch_size=128, n_epochs=50, n
     clf = ModelCompile(model=model, optimizer=torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001),
                        loss=nn.CrossEntropyLoss())
     clf.fit(x_data, y_data, batch_size=batch_size, nb_epoch=n_epochs, plot=True, protein=protein,
-            total_loss=total_loss, count=count)
+            total_loss=total_loss, count=count, info=info, model_type=model_type)
 
 
 # 绘制所有数据集的loss-epochs图
@@ -1105,7 +1112,14 @@ def plot_epochs(protein='all', train=True, model_type='CNN', n_epochs=100, info=
         plt.ylabel('loss')
         plt.plot(x, plot_train_loss, color='blue', label='train_data')
         plt.legend(loc='upper right')
-        plt.savefig('epochs/CNN_s_pkl/' + 'total_loss_2.png')
+        if info == 1:
+            filename = 'CNN_s'
+        else:
+            if model_type == 'CNN':
+                filename = 'CNN_ss'
+            else:
+                filename = 'CNN_BLSTM_ss'
+        plt.savefig('epochs/' + filename + 'total_loss.png')
 
         return plot_train_loss
 
@@ -1186,7 +1200,7 @@ def epochs_pkl(info=1, model_type='CNN'):
 
 # 绘制测试集在不同迭代次数下的ACC曲线
 @cal_time
-def plot_test_acc():
+def plot_test_acc(info=1, model_type='CNN'):
     total_tn = []
     total_fp = []
     total_fn = []
@@ -1198,12 +1212,26 @@ def plot_test_acc():
         total_tp.append([])
         data = load_data(protein=protein, train=False)
         x_data, y_data = get_bag_data(data=data)
-        x_data = np.array(x_data[0])
+        if info == 1:
+            x_data = np.array(x_data[0])
         for epoch in range(1, 101):
-            model = CNN(nb_filter=16, num_classes=2, kernel_size=(4, 10), pool_size=(1, 3), window_size=507,
-                        hidden_size=200, stride=(1, 1), padding=0, drop=False)
+            if info == 1:
+                model = CNN(nb_filter=16, num_classes=2, kernel_size=(4, 10), pool_size=(1, 3), window_size=507,
+                            hidden_size=200, stride=(1, 1), padding=0, drop=False)
+                model_file = '../Results/CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
+            else:
+                if model_type == 'CNN':
+                    model = CNN_ss(nb_filter=16, num_classes=2, seq_kernel_size=(4, 10), st_kernel_size=(5, 10),
+                                   pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=200,
+                                   stride=(1, 1), padding=0, drop=False)
+                    model_file = '../Results/CNN_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
+                else:
+                    model = CNN_BLSTM_ss(nb_filter=num_filters, num_classes=2, seq_kernel_size=(4, 10),
+                                         st_kernel_size=(5, 10), pool_size=(1, 3), seq_window_size=507,
+                                         st_window_size=509, hidden_size=200, stride=(1, 1), padding=0, drop=False)
+                    model_file = '../Results/CNN_BLSTM_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
+
             model = model.cuda()
-            model_file = '../Results/CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
             torch.cuda.empty_cache()
             model.load_state_dict(torch.load(model_file))
             y_pred = model.predict_prob(x_data)
@@ -1235,7 +1263,14 @@ def plot_test_acc():
     plt.ylabel('accuracy')
     plt.plot(x, acc, color='blue', label='test_data')
     plt.legend(loc='lower right')
-    plt.savefig('epochs/' + 'total_acc_test.png')
+    if info == 1:
+        filename = 'CNN_s'
+    else:
+        if model_type == 'CNN':
+            filename = 'CNN_ss'
+        else:
+            filename = 'CNN_BLSTM_ss'
+    plt.savefig('epochs/' + filename + '_total_acc_test.png')
 
 
 # 将train_loss和test_loss绘制在一个图中
@@ -1272,9 +1307,6 @@ def train_test_loss(info=1, model_type='CNN'):
                     temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
                 test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
                 print('%s测试集第%d次迭代已经完成' % (protein, epoch))
-            print('========')
-            print('%s测试集已经完成loss的计算     %d/24' % (protein, count))
-            print('========')
 
         else:
             if model_type == 'CNN':
@@ -1300,13 +1332,35 @@ def train_test_loss(info=1, model_type='CNN'):
                         temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
                     test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
                     print('%s测试集第%d次迭代已经完成' % (protein, epoch))
-                print('========')
-                print('%s测试集已经完成loss的计算     %d/24' % (protein, count + 1))
-                print('========')
 
             else:
-                print('暂未完成')
-                return
+                test_set = MyDataSet(torch.from_numpy(np.array(x_data[0]).astype(np.float32)),
+                                     torch.from_numpy(np.array(x_data[1]).astype(np.float32)),
+                                     torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
+                test_loader = DataLoader(dataset=test_set, batch_size=128, shuffle=False)
+                model = CNN_BLSTM_ss(nb_filter=num_filters, num_classes=2, seq_kernel_size=(4, 10),
+                                     st_kernel_size=(5, 10),
+                                     pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=200,
+                                     stride=(1, 1),
+                                     padding=0, drop=True)
+                model = model.cuda()
+                for epoch in range(1, 101):
+                    model_file = '../Results/CNN_BLSTM_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
+                    torch.cuda.empty_cache()
+                    model.load_state_dict(torch.load(model_file))
+                    temp_loss_for_one_epoch = []
+                    for x, y in test_loader:
+                        x0 = Variable(x[0]).cuda()
+                        x1 = Variable(x[1]).cuda()
+                        x_v = [x0, x1]
+                        y_v = Variable(y).cuda()
+                        y_pred = model(x_v)
+                        temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+                    test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
+                    print('%s测试集第%d次迭代已经完成' % (protein, epoch))
+        print('========')
+        print('%s测试集已经完成loss的计算     %d/24' % (protein, count + 1))
+        print('========')
 
     print('所有测试集的loss已经计算完成')
     test_loss = [0] * 100
