@@ -1062,9 +1062,6 @@ def epochs(protein, train=True, model_type='CNN', batch_size=128, n_epochs=50, n
                              stride=(1, 1),
                              padding=0, drop=True)
 
-    x_data = np.array(x_data)
-    y_data = np.array(y_data)
-
     if gpu:
         model = model.cuda()
 
@@ -1091,7 +1088,7 @@ def plot_epochs(protein='all', train=True, model_type='CNN', n_epochs=100, info=
             train_total_loss.append([])
             epochs(protein=protein, train=True, model_type=model_type, n_epochs=n_epochs, info=info,
                    total_loss=train_total_loss, count=count)
-            print('====第%d个已经完成====' % count)
+            print('====第%d个已经完成====' % (count + 1))
             torch.cuda.empty_cache()
 
         x = list(range(1, n_epochs + 1))
@@ -1295,14 +1292,16 @@ def train_test_loss(info=1, model_type='CNN'):
                     model.load_state_dict(torch.load(model_file))
                     temp_loss_for_one_epoch = []
                     for x, y in test_loader:
-                        x_v = Variable(x).cuda()
+                        x0 = Variable(x[0]).cuda()
+                        x1 = Variable(x[1]).cuda()
+                        x_v = [x0, x1]
                         y_v = Variable(y).cuda()
                         y_pred = model(x_v)
                         temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
                     test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
                     print('%s测试集第%d次迭代已经完成' % (protein, epoch))
                 print('========')
-                print('%s测试集已经完成loss的计算     %d/24' % (protein, count))
+                print('%s测试集已经完成loss的计算     %d/24' % (protein, count + 1))
                 print('========')
 
             else:
