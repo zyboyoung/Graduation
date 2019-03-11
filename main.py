@@ -992,18 +992,18 @@ def run_deeps(model_type='CNN', data_dir='../Data/GraphProt_CLIP_sequences', inf
 
 # 用于对已经训练好的蛋白质的数据集进行验证，方便测试各种评价指标
 @cal_time
-def validation(protein, model_type='CNN', info=1, drop=False):
+def validation(protein, model_type='CNN', info=1, drop=False, epoch=50):
     if info == 1:
         if model_type == 'CNN':
-            model_dir = '../Results/CNN_s_pkl/'
+            model_dir = '../Results/CNN_s_pkl/' + str(epoch) + '/'
         else:
-            model_dir = '../Results/CNN_BLSTM_s_pkl/'
+            model_dir = '../Results/CNN_BLSTM_s_pkl/' + str(epoch) + '/'
 
     else:
         if model_type == 'CNN':
-            model_dir = '../Results/CNN_ss_pkl/'
+            model_dir = '../Results/CNN_ss_pkl/' + str(epoch) + '/'
         else:
-            model_dir = '../Results/CNN_BLSTM_ss_pkl/'
+            model_dir = '../Results/CNN_BLSTM_ss_pkl/' + str(epoch) + '/'
 
     model_file = model_dir + protein + '_model.pkl'
     if not os.path.exists(model_file):
@@ -1113,12 +1113,12 @@ def plot_epochs(protein='all', train=True, model_type='CNN', n_epochs=100, info=
         plt.plot(x, plot_train_loss, color='blue', label='train_data')
         plt.legend(loc='upper right')
         if info == 1:
-            filename = 'CNN_s'
+            filename = 'CNN_s/'
         else:
             if model_type == 'CNN':
-                filename = 'CNN_ss'
+                filename = 'CNN_ss/'
             else:
-                filename = 'CNN_BLSTM_ss'
+                filename = 'CNN_BLSTM_ss/'
         plt.savefig('epochs/' + filename + 'total_loss.png')
 
         return plot_train_loss
@@ -1226,7 +1226,7 @@ def plot_test_acc(info=1, model_type='CNN'):
                                    stride=(1, 1), padding=0, drop=False)
                     model_file = '../Results/CNN_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
                 else:
-                    model = CNN_BLSTM_ss(nb_filter=num_filters, num_classes=2, seq_kernel_size=(4, 10),
+                    model = CNN_BLSTM_ss(nb_filter=16, num_classes=2, seq_kernel_size=(4, 10),
                                          st_kernel_size=(5, 10), pool_size=(1, 3), seq_window_size=507,
                                          st_window_size=509, hidden_size=200, stride=(1, 1), padding=0, drop=False)
                     model_file = '../Results/CNN_BLSTM_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
@@ -1264,12 +1264,12 @@ def plot_test_acc(info=1, model_type='CNN'):
     plt.plot(x, acc, color='blue', label='test_data')
     plt.legend(loc='lower right')
     if info == 1:
-        filename = 'CNN_s'
+        filename = 'CNN_s/'
     else:
         if model_type == 'CNN':
-            filename = 'CNN_ss'
+            filename = 'CNN_ss/'
         else:
-            filename = 'CNN_BLSTM_ss'
+            filename = 'CNN_BLSTM_ss/'
     plt.savefig('epochs/' + filename + '_total_acc_test.png')
 
 
@@ -1338,11 +1338,9 @@ def train_test_loss(info=1, model_type='CNN'):
                                      torch.from_numpy(np.array(x_data[1]).astype(np.float32)),
                                      torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
                 test_loader = DataLoader(dataset=test_set, batch_size=128, shuffle=False)
-                model = CNN_BLSTM_ss(nb_filter=num_filters, num_classes=2, seq_kernel_size=(4, 10),
-                                     st_kernel_size=(5, 10),
+                model = CNN_BLSTM_ss(nb_filter=16, num_classes=2, seq_kernel_size=(4, 10), st_kernel_size=(5, 10),
                                      pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=200,
-                                     stride=(1, 1),
-                                     padding=0, drop=True)
+                                     stride=(1, 1), padding=0, drop=True)
                 model = model.cuda()
                 for epoch in range(1, 101):
                     model_file = '../Results/CNN_BLSTM_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
@@ -1390,6 +1388,25 @@ def train_test_loss(info=1, model_type='CNN'):
     plt.savefig('epochs/' + filename + '/train_test_loss.png')
 
 
+def result():
+    result_dict = {}
+    for count, protein in enumerate(['PARCLIP_ELAVL1']):
+        model_dir = '../Results/CNN_ss_pkl/20/'
+        model_file = model_dir + protein + '_model.pkl'
+        data = load_data(protein=protein, train=False)
+        x, labels = get_bag_data(data=data)
+        predict = predict_network(model_type='CNN', x_test=x, model_file=model_file, num_filters=16,
+                                  info=2, drop=False)
+        y_pred_int = [1 if i > 0.5 else 0 for i in predict]
+        tn, fp, fn, tp = confusion_matrix(y_true=labels, y_pred=y_pred_int).ravel()
+        precision = tp / (tp + fp)
+        recall = tp / (tp + fn)
+        f1 = 2 / (1 / precision + 1 / recall)
+        auc = roc_auc_score(y_true=labels, y_score=predict)
+        result_dict[protein] = [precision, recall, f1, auc]
+    return result_dict
+
+
 if __name__ == '__main__':
     protein_list = []
     data_dir = '../Data/GraphProt_CLIP_sequences'
@@ -1405,4 +1422,7 @@ if __name__ == '__main__':
     #     validation(protein=protein)
     #     print('====第%d个已经完成====: %s' % ((count + 1), protein))
 
-    train_test_loss(info=2, model_type='CNN')
+    # train_test_loss(info=2, model_type='CNN_BLSTM')
+    # epochs_pkl(info=2, model_type='CNN_BLSTM')
+
+    print(result())
