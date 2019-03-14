@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional
 from torch.autograd import Variable
 import torch.utils.data
+from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import roc_auc_score, confusion_matrix, classification_report, roc_curve
 import argparse
@@ -567,7 +568,7 @@ class CNN_BLSTM(nn.Module):
 # 构建包含序列和结构信息的CNN_BLSTM模型
 class CNN_BLSTM_ss(nn.Module):
 	def __init__(self, nb_filter, num_classes=2, seq_kernel_size=(4, 10), st_kernel_size=(5, 10), pool_size=(1, 3),
-	             seq_window_size=507, st_window_size=509, hidden_size=200, stride=(1, 2), padding=0, num_layers=2,
+	             seq_window_size=507, st_window_size=509, hidden_size=256, stride=(1, 2), padding=0, num_layers=1,
 	             drop=True):
 		super(CNN_BLSTM_ss, self).__init__()
 
@@ -612,7 +613,7 @@ class CNN_BLSTM_ss(nn.Module):
 		self.fc_1 = nn.Linear(in_features=2 * hidden_size, out_features=hidden_size)
 		self.drop_2 = nn.Dropout(p=0.25)
 		self.relu_1 = nn.ReLU()
-		self.fc_2 = nn.Linear(in_features=hidden_size, out_features=hidden_size // 2)
+		self.fc_2 = nn.Linear(in_features=hidden_size, out_features=num_classes)
 		self.fc_3 = nn.Linear(in_features=hidden_size // 2, out_features=num_classes)
 
 	def forward(self, x):
@@ -661,8 +662,9 @@ class CNN_BLSTM_ss(nn.Module):
 		out = self.fc_2(out)
 		# print('fc_2', out.shape)
 
-		out = self.relu_1(out)
-		out = self.fc_3(out)
+		# out = self.relu_1(out)
+		# out = self.fc_3(out)
+
 		# print('fc_3', out.shape)
 
 		out = torch.sigmoid(out)
@@ -1171,7 +1173,7 @@ def epochs_pkl(info=1, model_type='CNN'):
 	:param model_type: 指定使用的网络模型
 	:return:
 	"""
-	for count, protein in enumerate(proteins):
+	for count, protein in enumerate(['PARCLIP_HUR', 'PARCLIP_MOV10_Sievers']):
 		data = load_data(protein=protein, train=True)
 		x_data, y_data = get_bag_data(data=data)
 		if info == 1:
@@ -1192,7 +1194,7 @@ def epochs_pkl(info=1, model_type='CNN'):
 				pkl_file = 'CNN_ss_pkl/'
 			else:
 				model = CNN_BLSTM_ss(nb_filter=16, num_classes=2, seq_kernel_size=(4, 10), st_kernel_size=(5, 10),
-				                     pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=256,
+				                     pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=128,
 				                     stride=(1, 2), padding=0, drop=True)
 				pkl_file = 'CNN_BLSTM_ss_pkl/'
 
@@ -1200,14 +1202,16 @@ def epochs_pkl(info=1, model_type='CNN'):
 			train_set = MyDataSet(torch.from_numpy(np.array(x_data[0]).astype(np.float32)),
 			                      torch.from_numpy(np.array(x_data[1]).astype(np.float32)),
 			                      torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
-			train_loader = DataLoader(dataset=train_set, batch_size=128, shuffle=True)
+			train_loader = DataLoader(dataset=train_set, batch_size=64, shuffle=True)
 
 		optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+		scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 		loss_f = nn.CrossEntropyLoss()
 		model.train()
 
 		for epoch in range(100):
-			total_loss = []
+			scheduler.step()
+			total_loss = 0
 			for idx, (x, y) in enumerate(train_loader):
 				if len(x) != 2:
 					x_v = Variable(x).cuda()
@@ -1223,11 +1227,11 @@ def epochs_pkl(info=1, model_type='CNN'):
 				loss = loss_f(y_pre, y_v)
 				loss.backward()
 				optimizer.step()
-				total_loss.append(loss.item())
+				total_loss += loss.item()
 				del y_pre
 				del loss
 
-			loss = sum(total_loss) / len(total_loss)
+			loss = sum(total_loss) / 100
 			print(protein + '第%d次迭代的loss为:' % (epoch + 1), loss)
 			torch.save(model.state_dict(), '../Results/' + pkl_file + str(epoch+1) + '/' + protein + '_model.pkl')
 
@@ -1236,17 +1240,18 @@ def epochs_pkl(info=1, model_type='CNN'):
 
 # 绘制测试集在不同迭代次数下的ACC曲线
 @cal_time
-def plot_test_acc(info=1, model_type='CNN'):
+def plot_test_acc(info=1, model_type='CNN', train=False):
 	total_tn = []
 	total_fp = []
 	total_fn = []
 	total_tp = []
 	for count, protein in enumerate(proteins):
+		print(protein)
 		total_tn.append([])
 		total_fp.append([])
 		total_fn.append([])
 		total_tp.append([])
-		data = load_data(protein=protein, train=False)
+		data = load_data(protein=protein, train=train)
 		x_data, y_data = get_bag_data(data=data)
 		if info == 1:
 			x_data = np.array(x_data[0])
@@ -1264,7 +1269,7 @@ def plot_test_acc(info=1, model_type='CNN'):
 				else:
 					model = CNN_BLSTM_ss(nb_filter=16, num_classes=2, seq_kernel_size=(4, 10),
 					                     st_kernel_size=(5, 10), pool_size=(1, 3), seq_window_size=507,
-					                     st_window_size=509, hidden_size=200, stride=(1, 1), padding=0, drop=False)
+					                     st_window_size=509, hidden_size=256, stride=(1, 2), padding=0, drop=False)
 					model_file = '../Results/CNN_BLSTM_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
 
 			model = model.cuda()
@@ -1278,6 +1283,16 @@ def plot_test_acc(info=1, model_type='CNN'):
 			total_fp[count].append(fp)
 			total_fn[count].append(fn)
 			total_tp[count].append(tp)
+			del tn
+			del fp
+			del fn
+			del tp
+			del y_data
+			del y_pred
+		print('total_tn:', total_tn)
+		print('total_fp:', total_fp)
+		print('total_fn:', total_fn)
+		print('total_tp:', total_tp)
 
 	tn = [0] * 100
 	fp = [0] * 100
@@ -1306,7 +1321,7 @@ def plot_test_acc(info=1, model_type='CNN'):
 			filename = 'CNN_ss/'
 		else:
 			filename = 'CNN_BLSTM_ss/'
-	plt.savefig('epochs/' + filename + '_total_acc_test.png')
+	plt.savefig('epochs/' + filename + 'total_acc_train.png')
 
 
 # 将train_loss和test_loss绘制在一个图中
@@ -1318,16 +1333,22 @@ def train_test_loss(info=1, model_type='CNN'):
 	:return:
 	"""
 	test_total_loss = []
+	train_total_loss = []
 	loss = nn.CrossEntropyLoss()
 	for count, protein in enumerate(proteins):
 		test_total_loss.append([])
-		data = load_data(protein=protein, train=False)
-		x_data, y_data = get_bag_data(data=data)
+		train_total_loss.append([])
+		train_bags, train_labels, test_bags, test_labels = get_all_data(protein=protein, path='../Data/GraphProt_CLIP_ss/')
+
 		if info == 1:
-			x_data = x_data[0]
-			test_set = TensorDataset(torch.from_numpy(np.array(x_data).astype(np.float32)),
-			                         torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
+			train_set = TensorDataset(torch.from_numpy(np.array(train_bags[0]).astype(np.float32)),
+			                          torch.from_numpy(train_labels.astype(np.float32)).long().view(-1))
+			train_loader = DataLoader(dataset=train_set, batch_size=128, shuffle=False)
+
+			test_set = TensorDataset(torch.from_numpy(np.array(test_bags[0]).astype(np.float32)),
+			                         torch.from_numpy(test_labels.astype(np.float32)).long().view(-1))
 			test_loader = DataLoader(dataset=test_set, batch_size=128, shuffle=False)
+
 			model = CNN(nb_filter=16, num_classes=2, kernel_size=(4, 10), pool_size=(1, 3), window_size=507,
 			            hidden_size=200, stride=(1, 1), padding=0, drop=False)
 			model = model.cuda()
@@ -1335,21 +1356,37 @@ def train_test_loss(info=1, model_type='CNN'):
 				model_file = '../Results/CNN_s_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
 				torch.cuda.empty_cache()
 				model.load_state_dict(torch.load(model_file))
-				temp_loss_for_one_epoch = []
+				train_loss_for_one_epoch = []
+				test_loss_for_one_epoch = []
+
+				for x, y in train_loader:
+					x_v = Variable(x).cuda()
+					y_v = Variable(y).cuda()
+					y_pred = model(x_v)
+					train_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+				train_total_loss[count].append(sum(train_loss_for_one_epoch) / len(train_loss_for_one_epoch))
+				print('%s训练集第%d次迭代已经完成' % (protein, epoch))
+
 				for x, y in test_loader:
 					x_v = Variable(x).cuda()
 					y_v = Variable(y).cuda()
 					y_pred = model(x_v)
-					temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
-				test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
+					test_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+				test_total_loss[count].append(sum(test_loss_for_one_epoch) / len(test_loss_for_one_epoch))
 				print('%s测试集第%d次迭代已经完成' % (protein, epoch))
 
 		else:
 			if model_type == 'CNN':
-				test_set = MyDataSet(torch.from_numpy(np.array(x_data[0]).astype(np.float32)),
-				                     torch.from_numpy(np.array(x_data[1]).astype(np.float32)),
-				                     torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
+				train_set = MyDataSet(torch.from_numpy(np.array(train_bags[0]).astype(np.float32)),
+				                     torch.from_numpy(np.array(train_bags[1]).astype(np.float32)),
+				                     torch.from_numpy(train_labels.astype(np.float32)).long().view(-1))
+				train_loader = DataLoader(dataset=train_set, batch_size=128, shuffle=False)
+
+				test_set = MyDataSet(torch.from_numpy(np.array(test_bags[0]).astype(np.float32)),
+				                     torch.from_numpy(np.array(test_bags[1]).astype(np.float32)),
+				                     torch.from_numpy(test_labels.astype(np.float32)).long().view(-1))
 				test_loader = DataLoader(dataset=test_set, batch_size=128, shuffle=False)
+
 				model = CNN_ss(nb_filter=16, num_classes=2, seq_kernel_size=(4, 10), st_kernel_size=(5, 10),
 				               pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=200,
 				               stride=(1, 1), padding=0, drop=False)
@@ -1358,54 +1395,85 @@ def train_test_loss(info=1, model_type='CNN'):
 					model_file = '../Results/CNN_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
 					torch.cuda.empty_cache()
 					model.load_state_dict(torch.load(model_file))
-					temp_loss_for_one_epoch = []
+					train_loss_for_one_epoch = []
+					test_loss_for_one_epoch = []
+
+					for x, y in train_loader:
+						x0 = Variable(x[0]).cuda()
+						x1 = Variable(x[1]).cuda()
+						x_v = [x0, x1]
+						y_v = Variable(y).cuda()
+						y_pred = model(x_v)
+						train_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+					train_total_loss[count].append(sum(train_loss_for_one_epoch) / len(train_loss_for_one_epoch))
+					print('%s训练集第%d次迭代已经完成' % (protein, epoch))
+
 					for x, y in test_loader:
 						x0 = Variable(x[0]).cuda()
 						x1 = Variable(x[1]).cuda()
 						x_v = [x0, x1]
 						y_v = Variable(y).cuda()
 						y_pred = model(x_v)
-						temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
-					test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
+						test_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+					test_total_loss[count].append(sum(test_loss_for_one_epoch) / len(test_loss_for_one_epoch))
 					print('%s测试集第%d次迭代已经完成' % (protein, epoch))
 
 			else:
-				test_set = MyDataSet(torch.from_numpy(np.array(x_data[0]).astype(np.float32)),
-				                     torch.from_numpy(np.array(x_data[1]).astype(np.float32)),
-				                     torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
+				train_set = MyDataSet(torch.from_numpy(np.array(train_bags[0]).astype(np.float32)),
+				                      torch.from_numpy(np.array(train_bags[1]).astype(np.float32)),
+				                      torch.from_numpy(train_labels.astype(np.float32)).long().view(-1))
+				train_loader = DataLoader(dataset=train_set, batch_size=128, shuffle=False)
+
+				test_set = MyDataSet(torch.from_numpy(np.array(test_bags[0]).astype(np.float32)),
+				                     torch.from_numpy(np.array(test_bags[1]).astype(np.float32)),
+				                     torch.from_numpy(test_labels.astype(np.float32)).long().view(-1))
 				test_loader = DataLoader(dataset=test_set, batch_size=128, shuffle=False)
+
 				model = CNN_BLSTM_ss(nb_filter=16, num_classes=2, seq_kernel_size=(4, 10), st_kernel_size=(5, 10),
-				                     pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=200,
-				                     stride=(1, 1), padding=0, drop=True)
+				                     pool_size=(1, 3), seq_window_size=507, st_window_size=509, hidden_size=128,
+				                     stride=(1, 2), padding=0, drop=True)
 				model = model.cuda()
 				for epoch in range(1, 101):
 					model_file = '../Results/CNN_BLSTM_ss_pkl/' + str(epoch) + '/' + protein + '_model.pkl'
 					torch.cuda.empty_cache()
 					model.load_state_dict(torch.load(model_file))
-					temp_loss_for_one_epoch = []
+					train_loss_for_one_epoch = []
+					test_loss_for_one_epoch = []
+
+					for x, y in train_loader:
+						x0 = Variable(x[0]).cuda()
+						x1 = Variable(x[1]).cuda()
+						x_v = [x0, x1]
+						y_v = Variable(y).cuda()
+						y_pred = model(x_v)
+						train_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+					train_total_loss[count].append(sum(train_loss_for_one_epoch) / len(train_loss_for_one_epoch))
+					print('%s训练集第%d次迭代已经完成' % (protein, epoch))
+
 					for x, y in test_loader:
 						x0 = Variable(x[0]).cuda()
 						x1 = Variable(x[1]).cuda()
 						x_v = [x0, x1]
 						y_v = Variable(y).cuda()
 						y_pred = model(x_v)
-						temp_loss_for_one_epoch.append(loss(y_pred, y_v).item())
-					test_total_loss[count].append(sum(temp_loss_for_one_epoch) / len(temp_loss_for_one_epoch))
+						test_loss_for_one_epoch.append(loss(y_pred, y_v).item())
+					test_total_loss[count].append(sum(test_loss_for_one_epoch) / len(test_loss_for_one_epoch))
 					print('%s测试集第%d次迭代已经完成' % (protein, epoch))
+
 		print('========')
-		print('%s测试集已经完成loss的计算     %d/24' % (protein, count + 1))
+		print('%s已经完成loss的计算     %d/24' % (protein, count + 1))
 		print('========')
 
-	print('所有测试集的loss已经计算完成')
+	print('所有的loss已经计算完成')
+	train_loss = [0] * 100
 	test_loss = [0] * 100
 	for i in range(100):
 		for j in range(len(proteins)):
+			train_loss[i] += train_total_loss[j][i]
 			test_loss[i] += test_total_loss[j][i]
+	train_loss = [i / len(proteins) for i in train_loss]
 	test_loss = [i / len(proteins) for i in test_loss]
 
-	print('========')
-	print('开始计算训练集的loss')
-	train_loss = plot_epochs(protein='all', train=True, info=info)
 	x = list(range(1, 101))
 	plt.figure()
 	plt.title('Model Loss')
@@ -1424,15 +1492,14 @@ def train_test_loss(info=1, model_type='CNN'):
 	plt.savefig('epochs/' + filename + '/train_test_loss.png')
 
 
-def result():
+def result(model_dir='../Results/CNN_BLSTM_ss_pkl/15/'):
 	result_dict = {}
-	for count, protein in enumerate(['PARCLIP_ELAVL1']):
-		model_dir = '../Results/CNN_ss_pkl/20/'
+	for count, protein in enumerate(proteins):
 		model_file = model_dir + protein + '_model.pkl'
 		data = load_data(protein=protein, train=False)
 		x, labels = get_bag_data(data=data)
-		predict = predict_network(model_type='CNN', x_test=x, model_file=model_file, num_filters=16,
-		                          info=2, drop=False)
+		predict = predict_network(model_type='CNN_BLSTM', x_test=x, model_file=model_file, num_filters=16,
+		                          info=2, drop=False, hidden_layers=256)
 		y_pred_int = [1 if i > 0.5 else 0 for i in predict]
 		tn, fp, fn, tp = confusion_matrix(y_true=labels, y_pred=y_pred_int).ravel()
 		precision = tp / (tp + fp)
@@ -1458,7 +1525,8 @@ if __name__ == '__main__':
 	#     validation(protein=protein)
 	#     print('====第%d个已经完成====: %s' % ((count + 1), protein))
 
-	# train_test_loss(info=2, model_type='CNN_BLSTM')
-	epochs_pkl(info=2, model_type='CNN_BLSTM')
+	train_test_loss(info=2, model_type='CNN_BLSTM')
+	# epochs_pkl(info=2, model_type='CNN_BLSTM')
 
 	# print(result())
+	# plot_test_acc(info=2, model_type='CNN_BLSTM', train=True)
