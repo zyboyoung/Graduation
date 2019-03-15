@@ -610,9 +610,9 @@ class CNN_BLSTM_ss(nn.Module):
 		self.layer_LSTM = nn.LSTM(input_size=input_seq_size + input_st_size, hidden_size=hidden_size,
 		                          num_layers=num_layers, batch_first=True, bidirectional=True)
 
-		self.drop_1 = nn.Dropout(p=0.25)
+		self.drop_1 = nn.Dropout(p=0.5)
 		self.fc_1 = nn.Linear(in_features=2 * hidden_size, out_features=hidden_size)
-		self.drop_2 = nn.Dropout(p=0.25)
+		self.drop_2 = nn.Dropout(p=0.5)
 		self.relu_1 = nn.ReLU()
 		self.fc_2 = nn.Linear(in_features=hidden_size, out_features=num_classes)
 		self.fc_3 = nn.Linear(in_features=hidden_size // 2, out_features=num_classes)
@@ -1247,8 +1247,8 @@ def epochs_pkl(info=1, model_type='CNN', n_epochs=100, hidden_size=200):
 			                      torch.from_numpy(y_data.astype(np.float32)).long().view(-1))
 			train_loader = DataLoader(dataset=train_set, batch_size=64, shuffle=True)
 
-		optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
-		scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+		optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.00001)
+		scheduler = lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 		loss_f = nn.CrossEntropyLoss().cuda()
 		torch.cuda.empty_cache()
 		model.train()
@@ -1272,8 +1272,8 @@ def epochs_pkl(info=1, model_type='CNN', n_epochs=100, hidden_size=200):
 				loss = loss_f(y_pre, y_v)
 				loss.backward()
 				optimizer.step()
-				total_loss += loss.data[0]
-				count += 1
+				total_loss += loss.item()
+				batch_count += 1
 				del y_pre
 				del loss
 
@@ -1413,7 +1413,7 @@ def train_test_loss(info=1, model_type='CNN', n_epochs=100, hidden_size=256):
 					x_v = Variable(x).cuda()
 					y_v = Variable(y).cuda()
 					y_pred = model(x_v)
-					train_loss_for_one_epoch += loss(y_pred, y_v).data[0]
+					train_loss_for_one_epoch += loss(y_pred, y_v).item()
 					batch_count += 1
 					del x_v
 					del y_v
@@ -1427,7 +1427,7 @@ def train_test_loss(info=1, model_type='CNN', n_epochs=100, hidden_size=256):
 					x_v = Variable(x).cuda()
 					y_v = Variable(y).cuda()
 					y_pred = model(x_v)
-					test_loss_for_one_epoch += loss(y_pred, y_v).data[0]
+					test_loss_for_one_epoch += loss(y_pred, y_v).item()
 					batch_count += 1
 					del x_v
 					del y_v
@@ -1465,7 +1465,7 @@ def train_test_loss(info=1, model_type='CNN', n_epochs=100, hidden_size=256):
 						x_v = [x0, x1]
 						y_v = Variable(y).cuda()
 						y_pred = model(x_v)
-						train_loss_for_one_epoch += loss(y_pred, y_v).data[0]
+						train_loss_for_one_epoch += loss(y_pred, y_v).item()
 						batch_count += 1
 						del x_v
 						del y_v
@@ -1480,7 +1480,7 @@ def train_test_loss(info=1, model_type='CNN', n_epochs=100, hidden_size=256):
 						x_v = [x0, x1]
 						y_v = Variable(y).cuda()
 						y_pred = model(x_v)
-						test_loss_for_one_epoch += loss(y_pred, y_v).data[0]
+						test_loss_for_one_epoch += loss(y_pred, y_v).item()
 						batch_count += 1
 						del x_v
 						del y_v
@@ -1517,7 +1517,7 @@ def train_test_loss(info=1, model_type='CNN', n_epochs=100, hidden_size=256):
 						x_v = [x0, x1]
 						y_v = Variable(y).cuda()
 						y_pred = model(x_v)
-						train_loss_for_one_epoch += loss(y_pred, y_v).data[0]
+						train_loss_for_one_epoch += loss(y_pred, y_v).item()
 						batch_count += 1
 						del x_v
 						del y_v
@@ -1532,7 +1532,7 @@ def train_test_loss(info=1, model_type='CNN', n_epochs=100, hidden_size=256):
 						x_v = [x0, x1]
 						y_v = Variable(y).cuda()
 						y_pred = model(x_v)
-						test_loss_for_one_epoch += loss(y_pred, y_v).data[0]
+						test_loss_for_one_epoch += loss(y_pred, y_v).item()
 						batch_count += 1
 						del x_v
 						del y_v
@@ -1588,7 +1588,7 @@ if __name__ == '__main__':
 	#     print('====第%d个已经完成====: %s' % ((count + 1), protein))
 
 	# train_test_loss(info=2, model_type='CNN_BLSTM')
-	# epochs_pkl(info=2, model_type='CNN_BLSTM')
+	epochs_pkl(info=2, model_type='CNN_BLSTM', n_epochs=80, hidden_size=256)
 
 	# print(result())
-	plot_test_acc(info=2, model_type='CNN_BLSTM', hidden_size=128)
+	# plot_test_acc(info=2, model_type='CNN_BLSTM', hidden_size=128)
